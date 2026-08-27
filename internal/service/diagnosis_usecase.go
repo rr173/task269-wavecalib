@@ -23,6 +23,8 @@ type ResidualResult struct {
 
 // AnalyzeRunResiduals 对运行下全部有效帧执行残差模式分解。
 // baseline 从运行的第一帧分解系数推导（作为校准基线）。
+// 支持重复分析：每次运行前先清理该运行上一次的残差模式结果，
+// 避免 (frame_id, mode_name) 唯一约束冲突，使再次分析可成功完成。
 func (u *DiagnosisUsecase) AnalyzeRunResiduals(ctx context.Context, runID string) (*ResidualResult, error) {
 	frames, err := u.svc.Store.ListFramesByRun(ctx, runID)
 	if err != nil {
@@ -39,6 +41,10 @@ func (u *DiagnosisUsecase) AnalyzeRunResiduals(ctx context.Context, runID string
 	}
 	if baseline == nil {
 		return nil, fmt.Errorf("%w: 运行 %s 无可用帧，无法建立基线", model.ErrInvalidInput, runID)
+	}
+	// 清理上一次的残差模式结果，使重复分析成为覆盖式重算而非追加。
+	if err := u.svc.Store.DeleteResidualModesByRun(ctx, runID); err != nil {
+		return nil, err
 	}
 	result := &ResidualResult{RunID: runID}
 	for _, f := range frames {
