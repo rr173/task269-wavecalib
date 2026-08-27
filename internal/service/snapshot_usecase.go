@@ -19,7 +19,8 @@ func (u *SnapshotUsecase) CreateSnapshot(ctx context.Context, runID, baselineMat
 	if err != nil {
 		return nil, err
 	}
-	frames, err := u.svc.Store.CountFramesByRun(ctx, runID)
+	// 统计未排除的帧数：失真帧排除后不应计入快照，否则排除看似未生效。
+	frames, err := u.svc.Store.CountAnalyzableFramesByRun(ctx, runID)
 	if err != nil {
 		return nil, err
 	}
