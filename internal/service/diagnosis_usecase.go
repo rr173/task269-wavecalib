@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"task269-wavecalib/internal/diagnosis"
 	"task269-wavecalib/internal/model"
@@ -64,12 +63,15 @@ func (u *DiagnosisUsecase) AnalyzeRunResiduals(ctx context.Context, runID string
 }
 
 // AttributeDrift 对运行下全部有效帧执行漂移归因，生成候选列表。
+//
+// 时间基准：每帧以其采集时刻 TimestampMS 而非当前墙钟为基准匹配校准矩阵版本
+// 与判定是否过建议年龄。这样回放几小时前采集的波前帧时，归因仍按帧采集时刻
+// 评估矩阵时效，而非按归因时刻把当时仍生效的矩阵误判为过期。
 func (u *DiagnosisUsecase) AttributeDrift(ctx context.Context, runID string) ([]*model.DriftCandidate, error) {
 	frames, err := u.svc.Store.ListFramesByRun(ctx, runID)
 	if err != nil {
 		return nil, err
 	}
-	nowMS := time.Now().UnixMilli()
 	var out []*model.DriftCandidate
 	for _, f := range frames {
 		if f.Status == model.FrameStatusExcluded {
@@ -99,7 +101,7 @@ func (u *DiagnosisUsecase) AttributeDrift(ctx context.Context, runID string) ([]
 			ModesDeviation: dev,
 			Star:           star,
 			Matrix:         matrix,
-			NowMS:          nowMS,
+			NowMS:          f.TimestampMS,
 		})
 		if err != nil {
 			return nil, err

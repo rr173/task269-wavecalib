@@ -55,7 +55,10 @@ func (e *AttributionEngine) Attribute(ctx context.Context, in *Input) (*model.Dr
 	detail := buildDetail(in, name, dev)
 
 	var attribution string
-	matrixStale := in.Matrix != nil && (in.Matrix.Status == model.MatrixStatusExpired || calibration.IsStale(in.Matrix, in.NowMS))
+	// 矩阵时效以帧采集时刻 (in.NowMS) 为基准判定：既看是否在生效区间内，
+	// 也看过建议年龄。Status 在登记时按当时墙钟冻结，无法反映采集时刻，
+	// 故过期与否由 EffectiveInterval 与采集时刻直接推导。
+	matrixStale := in.Matrix != nil && (!calibration.IsActiveAt(in.Matrix, in.NowMS) || calibration.IsStale(in.Matrix, in.NowMS))
 	switch {
 	case matrixStale && math.Abs(dev) >= DeviationThreshold:
 		attribution = model.AttributionCalib
@@ -95,7 +98,9 @@ func buildDetail(in *Input, mode string, dev float64) string {
 	matrixNote := "无矩阵"
 	if in.Matrix != nil {
 		matrixNote = calibration.EffectiveIntervalSummary(in.Matrix)
-		if calibration.IsStale(in.Matrix, in.NowMS) {
+		if !calibration.IsActiveAt(in.Matrix, in.NowMS) {
+			matrixNote += "（采集时刻已超出生效区间，校准漂移风险）"
+		} else if calibration.IsStale(in.Matrix, in.NowMS) {
 			matrixNote += "（已过建议年龄，有漂移风险）"
 		}
 	}

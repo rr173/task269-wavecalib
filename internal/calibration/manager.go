@@ -59,6 +59,12 @@ func (m *Manager) ResolveForTimestamp(ctx context.Context, ts int64) (*model.Cal
 	return mat, nil
 }
 
+// IsActiveAt 判断矩阵在指定时刻是否处于生效区间（effective_from <= ts < effective_until）。
+// 用于按帧采集时刻匹配矩阵版本，而非依赖登记时按墙钟冻结的 Status。
+func IsActiveAt(mat *model.CalibrationMatrix, ts int64) bool {
+	return mat.EffectiveFrom <= ts && ts < mat.EffectiveUntil
+}
+
 // AgeDays 计算矩阵从生效时刻至今的天数。
 func AgeDays(mat *model.CalibrationMatrix, nowMS int64) int {
 	age := nowMS - mat.EffectiveFrom
