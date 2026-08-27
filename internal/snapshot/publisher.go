@@ -64,16 +64,20 @@ func (p *Publisher) Publish(ctx context.Context, snapID string) (*model.Diagnosi
 	if err := model.CheckSnapshotTransition(snap.Status, model.SnapshotStatusPub); err != nil {
 		return nil, err
 	}
-	// 同运行先发布过的快照全部标记为"替代"
+	// 同运行已发布过的旧快照全部标记为"替代"，保证同运行只保留一个已发布快照
 	existing, err := p.store.ListSnapshotsByRun(ctx, snap.RunID)
 	if err != nil {
 		return nil, err
 	}
 	for _, s := range existing {
-		if s.Status == model.SnapshotStatusDraft && s.ID != snapID {
-			if err := p.store.UpdateSnapshotStatus(ctx, s.ID, model.SnapshotStatusReplaced); err != nil {
-				return nil, err
-			}
+		if s.ID == snapID {
+			continue
+		}
+		if s.Status != model.SnapshotStatusPub {
+			continue
+		}
+		if err := p.store.UpdateSnapshotStatus(ctx, s.ID, model.SnapshotStatusReplaced); err != nil {
+			return nil, err
 		}
 	}
 	if err := p.store.UpdateSnapshotStatus(ctx, snapID, model.SnapshotStatusPub); err != nil {
