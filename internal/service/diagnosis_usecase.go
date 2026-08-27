@@ -21,16 +21,19 @@ type ResidualResult struct {
 	Modes          []*model.ResidualMode `json:"modes"`
 }
 
-// AnalyzeRunResiduals 对运行下全部有效帧执行残差模式分解。
-// baseline 从运行的第一帧分解系数推导（作为校准基线）。
+// AnalyzeRunResiduals 对运行下全部未排除帧执行残差模式分解。
+// baseline 从运行的首个未排除帧分解系数推导（作为校准基线）。
 func (u *DiagnosisUsecase) AnalyzeRunResiduals(ctx context.Context, runID string) (*ResidualResult, error) {
 	frames, err := u.svc.Store.ListFramesByRun(ctx, runID)
 	if err != nil {
 		return nil, err
 	}
-	// 基线：第一帧系数
+	// 基线：取首个未排除帧的系数，避免用被排除的脏帧建立基线。
 	var baseline map[string]float64
 	for _, f := range frames {
+		if f.Status == model.FrameStatusExcluded {
+			continue
+		}
 		baseline = diagnosis.Decompose(f.Residuals)
 		break
 	}
