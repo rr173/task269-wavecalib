@@ -55,7 +55,7 @@ func (e *AttributionEngine) Attribute(ctx context.Context, in *Input) (*model.Dr
 	detail := buildDetail(in, name, dev)
 
 	var attribution string
-	matrixStale := in.Matrix != nil && in.Matrix.Status == model.MatrixStatusExpired
+	matrixStale := in.Matrix != nil && (in.Matrix.Status == model.MatrixStatusExpired || calibration.IsStale(in.Matrix, in.NowMS))
 	switch {
 	case matrixStale && math.Abs(dev) >= DeviationThreshold:
 		attribution = model.AttributionCalib
