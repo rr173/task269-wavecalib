@@ -70,20 +70,25 @@ func (u *DiagnosisUsecase) AttributeDrift(ctx context.Context, runID string) ([]
 		return nil, err
 	}
 	nowMS := time.Now().UnixMilli()
+	// 残差模式按运行组织，一次取出后在内存里按帧分组，
+	// 归因时只取当前帧自己的偏差，绝不能混入其它帧的残差模式。
+	modes, err := u.svc.Store.ListResidualModesByRun(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	devByFrame := make(map[string]map[string]float64, len(frames))
+	for _, m := range modes {
+		dev := devByFrame[m.FrameID]
+		if dev == nil {
+			dev = make(map[string]float64)
+			devByFrame[m.FrameID] = dev
+		}
+		dev[m.ModeName] = m.Deviation
+	}
 	var out []*model.DriftCandidate
 	for _, f := range frames {
 		if f.Status == model.FrameStatusExcluded {
 			continue
-		}
-		modes, err := u.svc.Store.ListResidualModesByRun(ctx, runID)
-		if err != nil {
-			return nil, err
-		}
-		dev := make(map[string]float64)
-		for _, m := range modes {
-			if m.FrameID != f.ID {
-				dev[m.ModeName] = m.Deviation
-			}
 		}
 		star, err := u.svc.Store.GetReferenceStar(ctx, f.StarID)
 		if err != nil {
@@ -100,7 +105,7 @@ func (u *DiagnosisUsecase) AttributeDrift(ctx context.Context, runID string) ([]
 		cand, err := u.svc.Attribution.Attribute(ctx, &diagnosis.Input{
 			RunID:          runID,
 			Frame:          f,
-			ModesDeviation: dev,
+			ModesDeviation: devByFrame[f.ID],
 			Star:           star,
 			Matrix:         matrix,
 			NowMS:          frameMS,
