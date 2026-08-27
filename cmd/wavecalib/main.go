@@ -159,7 +159,24 @@ func runSmokeTest(dbPath string, logger *log.Logger) error {
 		s1.Close()
 		return fmt.Errorf("漂移候选数量异常: got %d want 3", len(cands))
 	}
-	logger.Printf("漂移归因完成：%d 条候选", len(cands))
+	// 验证第 3 帧被正确归因为"命令相关"（tilt-x 显著漂移）。
+	// 若残差分析基线误取末帧，第 3 帧偏差会被压成 ~0 而退化为"证据不足"。
+	byFrame := make(map[string]*model.DriftCandidate, len(cands))
+	for _, c := range cands {
+		byFrame[c.FrameID] = c
+	}
+	frame3ID := fmt.Sprintf("wf_%s_%d", run.ID, 3)
+	c3, ok := byFrame[frame3ID]
+	if !ok {
+		s1.Close()
+		return fmt.Errorf("缺少第 3 帧候选 (frame_id=%s)", frame3ID)
+	}
+	if c3.Attribution != model.AttributionCommand {
+		s1.Close()
+		return fmt.Errorf("第 3 帧归因异常: got %q want %q (置信度=%.2f)",
+			c3.Attribution, model.AttributionCommand, c3.Confidence)
+	}
+	logger.Printf("漂移归因完成：%d 条候选，第 3 帧归因=%s", len(cands), c3.Attribution)
 
 	// 9. 确认第一条候选
 	if _, err := svc.Diagnoses.ConfirmCandidate(ctx, cands[0].ID); err != nil {

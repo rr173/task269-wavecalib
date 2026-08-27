@@ -28,13 +28,16 @@ func (u *DiagnosisUsecase) AnalyzeRunResiduals(ctx context.Context, runID string
 	if err != nil {
 		return nil, err
 	}
-	// 基线：第一帧系数
+	// 基线：第一帧（seq 最小）的非排除帧系数。
+	// 注意：循环在拿到首个可用帧后必须立即停止，否则会一直覆盖到最后一帧，
+	// 使基线退化为末帧系数，导致末帧的偏差被压成 ~0、归因误判为"证据不足"。
 	var baseline map[string]float64
 	for _, f := range frames {
 		if f.Status == model.FrameStatusExcluded {
 			continue
 		}
 		baseline = diagnosis.Decompose(f.Residuals)
+		break
 	}
 	if baseline == nil {
 		return nil, fmt.Errorf("%w: 运行 %s 无可用帧，无法建立基线", model.ErrInvalidInput, runID)
