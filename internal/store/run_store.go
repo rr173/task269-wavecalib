@@ -66,15 +66,22 @@ func (s *Store) ListRuns(ctx context.Context, status string) ([]*model.Observati
 
 // UpdateRunStatus 用 CAS 语义更新运行状态：仅当当前状态等于 expected 时更新，
 // 防止并发把状态机推进到非法路径。
+//
+// CAS 由单条 UPDATE 的 WHERE status = expected 子句原子完成，避免
+// TransitionRun 中"先读后写"的 TOCTOU 窗口：即使读取期望状态后另一路流转
+// 已把状态推进，本调用也会因 status != expected 而匹配 0 行，从而拒绝
+// 过期期望状态的写入、保护状态机不被覆盖。
 func (s *Store) UpdateRunStatus(ctx context.Context, id, expected, next string) error {
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE runs SET status = ?, updated_at = ? WHERE id = ?`,
-		next, now(), id)
+		`UPDATE runs SET status = ?, updated_at = ? WHERE id = ? AND status = ?`,
+		next, now(), id, expected)
 	if err != nil {
 		return mapErr(err, "运行")
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
+		// 0 行匹配有两种成因：运行不存在，或当前状态已偏离 expected。
+		// 若当前已是目标状态，视为幂等成功；否则按状态机冲突报告。
 		var cur string
 		if err := s.db.QueryRowContext(ctx, `SELECT status FROM runs WHERE id = ?`, id).Scan(&cur); err != nil {
 			return mapErr(err, "运行")

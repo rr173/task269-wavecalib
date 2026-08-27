@@ -49,6 +49,38 @@ func TestRunLifecycle(t *testing.T) {
 	}
 }
 
+// TestRunStatusCASStaleExpected 验证过期期望状态写入被拒绝：
+// 运行已推进到"待分析"后，用旧期望"采集中"再流转应被 CAS 拒绝，
+// 而不是覆盖状态机。
+func TestRunStatusCASStaleExpected(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	r := &model.ObservationRun{ID: "run-stale", Name: "n", TelescopeID: "tel", Status: model.RunStatusCollecting}
+	if err := s.CreateRun(ctx, r); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	// 正常流转到待分析
+	if err := s.UpdateRunStatus(ctx, "run-stale", model.RunStatusCollecting, model.RunStatusAnalyzing); err != nil {
+		t.Fatalf("UpdateRunStatus -> 待分析: %v", err)
+	}
+	// 用过期期望"采集中"再流转（如封存）：CAS 必须拒绝，状态不被覆盖
+	if err := s.UpdateRunStatus(ctx, "run-stale", model.RunStatusCollecting, model.RunStatusSealed); err == nil {
+		t.Fatalf("过期期望状态写入未被 CAS 拒绝，状态机被覆盖")
+	}
+	got, err := s.GetRun(ctx, "run-stale")
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if got.Status != model.RunStatusAnalyzing {
+		t.Fatalf("状态被覆盖为 %s，期望仍是 %s", got.Status, model.RunStatusAnalyzing)
+	}
+	// 正确期望流转仍成功：待分析 -> 需复核
+	if err := s.UpdateRunStatus(ctx, "run-stale", model.RunStatusAnalyzing, model.RunStatusReviewing); err != nil {
+		t.Fatalf("UpdateRunStatus -> 需复核: %v", err)
+	}
+}
+
 func TestFrameUniqueConstraint(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
